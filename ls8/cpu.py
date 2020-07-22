@@ -1,99 +1,91 @@
-"""CPU functionality."""
-
 import sys
-OPERANDS_OFFSET = 6
-
-ADD  = 0b10100000
-AND  = 0b10101000
-CALL = 0b01010000
-CMP  = 0b10100111
-DEC  = 0b01100110
-DIV  = 0b10100011
-HLT  = 0b00000001
-INC  = 0b01100101
-INT  = 0b01010010
-IRET = 0b00010011
-JEQ  = 0b01010101
-JGE  = 0b01011010
-JGT  = 0b01010111
-JLE  = 0b01011001
-JLT  = 0b01011000
-JMP  = 0b01010100
-JNE  = 0b01010110
-LD   = 0b10000011
-LDI  = 0b10000010
-MOD  = 0b10100100
-MUL  = 0b10100010
-NOP  = 0b00000000
-NOT  = 0b01101001
-OR   = 0b10101010
-POP  = 0b01000110
-PRA  = 0b01001000
-PRN  = 0b01000111
-PUSH = 0b01000101
-RET  = 0b00010001
-SHL  = 0b10101100
-SHR  = 0b10101101
-ST   = 0b10000100
-SUB  = 0b10100001
-XOR  = 0b10101011
-
 
 class CPU:
     """Main CPU class."""
 
     def __init__(self):
         """Construct a new CPU."""
-        self.ram = [0] * 256
+        self.ram = [0] * 256 
+        # +-----------------------+
+        # | FF  I7 vector         |    Interrupt vector table
+        # | FE  I6 vector         |
+        # | FD  I5 vector         |
+        # | FC  I4 vector         |
+        # | FB  I3 vector         |
+        # | FA  I2 vector         |
+        # | F9  I1 vector         |
+        # | F8  I0 vector         |
+        # | F7  Reserved          |
+        # | F6  Reserved          |
+        # | F5  Reserved          |
+        # | F4  Key pressed       |    Holds the most recent key pressed on the keyboard
+        # | F3  Start of Stack    |
+        # | F2  [more stack]      |    Stack grows down
+        # | ...                   |
+        # | 01  [more program]    |
+        # | 00  Program entry     |    Program loaded upward in memory starting at 0
+        # +-----------------------+
         self.reg = [0] * 8
+        #R5 is reserved as the interrupt mask (IM)
+        #R6 is reserved as the interrupt status (IS)
+        #R7 is reserved as the stack pointer (SP)
+        # `PC`: Program Counter, address of the currently executing instruction
         self.pc = 0
-        self.running = True
-        self.configure_dispatch_table()
+        #  `IR`: Instruction Register, contains a copy of the currently executing instruction
+        #  `MAR`: Memory Address Register, holds the memory address we're reading or writing
+        #  `MDR`: Memory Data Register, holds the value to write or the value just read
+        #  `FL`: Flags, see below  
+        self.fl = 0  
 
-    def configure_dispatch_table(self):
-        self.dispatch_table = {}
+     # Inside the CPU, there are two internal registers used for memory operations: the Memory Address Register (MAR) and the Memory Data Register (MDR). The MAR contains the address that is being read or written to. The MDR contains the data that was read or the data to write. You don't need to add the MAR or MDR to your CPU class, but they would make handy parameter names for ram_read() and ram_write(), if you wanted.   
+     #  `MAR`: Memory Address Register, holds the memory address we're reading or writing
+     #  `MDR`: Memory Data Register, holds the value to write or the value just read
+     
+    def ram_read(self, MAR):
+    # should accept the address to read and return the value stored there.
+        if MAR < len(self.ram):
+            return self.ram[MAR]
+        else:
+            return None
 
-        self.dispatch_table[LDI] = self.ldi
-        self.dispatch_table[PRN] = self.prn
+    def ram_write(self, MAR, MDR): 
+    # should accept a value to write, and the address to write it to. 
+        self.ram[MAR] = MDR
 
-    def ram_read(self, address) -> int:
-        return self.ram[address]
 
-    def ram_write(self, address, value):
-        self.ram[address] = value
-    def load(self):
+    def load(self, program = None):
         """Load a program into memory."""
 
-        address = 0
+        if len(sys.argv) < 2:
+            print("Please pass in a second filename:")
+            sys.exit()
 
-        # For now, we've just hardcoded a program:
+        try:
+            address = 0
+            with open(program) as file:
+                for line in file:
+                    split_line = line.split('#')[0]
+                    command = split_line.strip()
 
-        program = [
-            # From print8.ls8
-            0b10000010, # LDI R0,8
-            0b00000000,
-            0b00001000,
-            0b01000111, # PRN R0
-            0b00000000,
-            0b00000001, # HLT
-        ]
+                    if command == '':
+                        continue
 
-        for instruction in program:
-            self.ram[address] = instruction
-            address += 1
+                    instruction = int(command)
+                    self.ram[address] = instruction
 
-    def ldi(self, reg_num, value):
-        self.reg[reg_num] = value
+                    address += 1
 
-    def prn(self, reg_num):
-        print(self.reg[reg_num])
-        
+        except FileNotFoundError:
+            print(f'{sys.argv[0]}: {sys.argv[1]} file was not found')
+            sys.exit()
+
     def alu(self, op, reg_a, reg_b):
         """ALU operations."""
 
         if op == "ADD":
             self.reg[reg_a] += self.reg[reg_b]
-        #elif op == "SUB": etc
+        elif op == "MUL":
+            self.reg[reg_a] *= self.reg[reg_b]
         else:
             raise Exception("Unsupported ALU operation")
 
@@ -116,30 +108,46 @@ class CPU:
             print(" %02X" % self.reg[i], end='')
 
         print()
+    
+    def get_index(self, binary):
+        binary_str = str(binary)
+        binary_str.replace("0b", '')
+        return int(binary_str, 2) 
+
+    def ldi(self, reg_num, value):
+        self.reg[reg_num] = value
+
+    def prn(self, reg_num):
+        print(self.reg[reg_num])
 
     def run(self):
         """Run the CPU."""
-        instruction_reg = self.ram_read(self.pc)
+        # `IR`: Instruction Register, contains a copy of the currently executing instruction
+        ir = self.ram_read(self.pc)
+        HLT = 1
+        LDI = 10000010 
+        PRN = 1000111
 
-        while instruction_reg != HLT:
+        while ir != HLT:
+            ir = self.ram_read(self.pc)
+            str_ir = str(ir)
+            # Using ram_read(), read the bytes at PC+1 and PC+2 from RAM into variables operand_a and operand_b in case the instruction needs them.
+            operand_a = self.get_index(self.ram_read(self.pc+1))
+            operand_b = self.get_index(self.ram_read(self.pc+2))
 
-            # Determine how many bytes in this instruction
-            num_operands = instruction_reg >> OPERANDS_OFFSET
-            print(f"instruction_reg: {bin(instruction_reg)}")
-            print(f"num_operands: {num_operands}")
-
-            # Call appropriate function from dispatch table with proper number of operands
-            if num_operands == 0:
-                self.dispatch_table[instruction_reg]()
-                self.pc += 1
-            elif num_operands == 1:
-                self.dispatch_table[instruction_reg](self.ram_read(self.pc + 1))
+            if len(str_ir) > 6 and str_ir[-6] == "1":
+            #this is an alu operator
+                if ir == 10100010:
+                    op = "MUL"
+                elif ir == 10100000:
+                    op = "ADD"
+                self.alu(op, operand_a, operand_b)
                 self.pc += 2
-            elif num_operands == 2:
-                self.dispatch_table[instruction_reg](self.ram_read(self.pc + 1), self.ram_read(self.pc + 2))
-                self.pc += 3
-            else:
-                print("Bad instruction")
+            elif ir == LDI:
+                self.ldi(operand_a, operand_b)
+                self.pc += 2
+            elif ir == PRN:
+                self.prn(operand_a)
+                self.pc +=1
 
-            # Read next instruction
-            instruction_reg = self.ram_read(self.pc)
+            self.pc += 1 
