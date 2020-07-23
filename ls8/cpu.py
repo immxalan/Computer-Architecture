@@ -1,4 +1,11 @@
 import sys
+HLT = 1
+LDI = 10000010 
+PRN = 1000111
+PUSH = 1000101 
+POP = 1000110 
+MUL = 10100010
+ADD = 10100000
 
 class CPU:
     """Main CPU class."""
@@ -7,6 +14,7 @@ class CPU:
         """Construct a new CPU."""
         self.ram = [0] * 256 
         self.reg = [0] * 8
+        self.reg[7] = 244
         self.pc = 0
         self.fl = 0  
      
@@ -81,35 +89,45 @@ class CPU:
 
     def ldi(self, reg_num, value):
         self.reg[reg_num] = value
-
+        self.pc += 2
     def prn(self, reg_num):
         print(self.reg[reg_num])
+        self.pc += 1
+    def push(self, reg_num):
+        self.reg[7] -= 1
+        value = self.reg[reg_num]
+        sp = self.reg[7]
+        self.ram[sp] = value
+        self.pc +=1
 
+    def pop(self, operand_a):
+        sp = self.reg[7]
+        value = self.ram[sp]
+        self.reg[operand_a] = value
+        self.reg[7] += 1
+        self.pc +=1
     def run(self):
         """Run the CPU."""
         ir = self.ram_read(self.pc)
-        HLT = 1
-        LDI = 10000010 
-        PRN = 1000111
 
         while ir != HLT:
             ir = self.ram_read(self.pc)
             str_ir = str(ir)
             operand_a = self.get_index(self.ram_read(self.pc+1))
             operand_b = self.get_index(self.ram_read(self.pc+2))
-
-            if len(str_ir) > 6 and str_ir[-6] == "1":
-                if ir == 10100010:
-                    op = "MUL"
-                elif ir == 10100000:
-                    op = "ADD"
+            if ir == MUL:
+                op = "MUL"
                 self.alu(op, operand_a, operand_b)
-                self.pc += 2
+            elif ir == ADD:
+                op = "ADD"
+                self.alu(op, operand_a, operand_b)
             elif ir == LDI:
                 self.ldi(operand_a, operand_b)
-                self.pc += 2
             elif ir == PRN:
                 self.prn(operand_a)
-                self.pc +=1
+            elif ir == PUSH:
+                self.push(operand_a)
+            elif ir == POP:
+                self.pop(operand_a)
 
             self.pc += 1 
